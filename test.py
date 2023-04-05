@@ -18,19 +18,14 @@ def vec_len(v):
 def load_dataset(filename):
     #csv 데이터 로드
     df = pd.read_csv(filename, index_col=0, usecols=range(4))
-
     #시간 데이터 소숫점 버리기
     df.index = df.index.map(lambda x: int(x))
-
     #10초까지 자르기
     df = df.loc[df.index < 10]
-
     #합력 계산
     df = df.apply(lambda d: vec_len(d), axis="columns", result_type="expand")
-
     #평균 groupby
     average = df.groupby(df.index.name).mean()
-
     #numpy 배열로 변환
     return np.array(average)
 
@@ -50,33 +45,31 @@ def load_datasets_in_folder(folder):
         file_names.append(f)
     return (datasets, file_names)
 
-
-def load_training_data():
-    #데이터셋 정의
-    X = np.empty((0, 10))
-    Y = np.empty((1, 0))
-    #뜀 데이터 로드
-    print("뜀 데이터를 로드합니다.")
-    run_data = load_datasets_in_folder("./dataset_run")[0]
-    X = np.vstack((X, run_data))
-    Y = np.append(Y, np.repeat(1, len(run_data)))
-    #걸음 데이터 로드
-    print("걸음 데이터를 로드합니다.")
-    walk_data = load_datasets_in_folder("./dataset_walk")[0]
-    X = np.vstack((X, walk_data))
-    Y = np.append(Y, np.repeat(0, len(walk_data)))
-    Y = np.reshape(Y, (len(Y), 1))
-    return (X, Y)
+np.set_printoptions(precision=20, suppress=True)
 
 #StandardScaler 로드
 scaler = joblib.load(path.join(model_folder, "scaler.joblib"))
 
 # 가중치 랜덤 1, 2, 3
 container = np.load(path.join(model_folder, 'model.npz'), 'rb')
-W1, W2, W3, W4 = [container[key] for key in container]
+W1, W2, W3, W4, b1, b2, b3, b4 = [container[key] for key in container]
 
 #테스트 데이터 로드
 test_datum, file_names = load_datasets_in_folder("./test_data")
+
+def interpret_output(output):
+    output = np.ndarray.flatten(output)
+    assert(len(output) == 3)
+    active = output >= 0.7
+    #0.7 이상이 2개이상일 경우 판단 불가
+    if np.count_nonzero(active) >= 2:
+        return "판단 불가"
+    if active[0]:
+        return "뜀"
+    elif active[1]:
+        return "걸음"
+    else:
+        return "가만히 있기"
 
 for test_data, file_name in zip(test_datum, file_names):
     print("---------------------------")
@@ -84,17 +77,14 @@ for test_data, file_name in zip(test_datum, file_names):
     test_data = scaler.transform(np.reshape(test_data, (1, 10)))
     test_data = np.array([test_data])
     print(f'데이터: {test_data}')
-    z1 = np.dot(test_data, W1)
+    z1 = np.dot(test_data, W1) + b1
     a1 = 1 / (1 + np.exp(-z1))
-    z2 = np.dot(a1, W2)
+    z2 = np.dot(a1, W2) + b2
     a2 = 1 / (1 + np.exp(-z2))
-    z3 = np.dot(a2, W3)
+    z3 = np.dot(a2, W3) + b3
     a3 = 1 / (1 + np.exp(-z3))
-    z4 = np.dot(a3, W4)
+    z4 = np.dot(a3, W4) + b4
 
     y_hat_test = 1 / (1 + np.exp(-z4))
-    print(f'결과: {y_hat_test}')
-    if y_hat_test > 0.8:
-        print("뛰었습니다")
-    else:
-        print("걸었습니다")
+    print("결과:", y_hat_test)
+    print(f"결과 해석: {interpret_output(y_hat_test)}")

@@ -5,6 +5,7 @@ import numpy as np
 from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
 from numpy.random import Generator, PCG64
+
 def vec_len(v):
     sum = 0
     for component in v:
@@ -14,19 +15,14 @@ def vec_len(v):
 def load_dataset(filename):
     #csv 데이터 로드
     df = pd.read_csv(filename, index_col=0, usecols=range(4))
-
     #시간 데이터 소숫점 버리기
     df.index = df.index.map(lambda x: int(x))
-
     #10초까지 자르기
     df = df.loc[df.index < 10]
-
     #합력 계산
     df = df.apply(lambda d: vec_len(d), axis="columns", result_type="expand")
-
     #평균 groupby
     average = df.groupby(df.index.name).mean()
-
     #numpy 배열로 변환
     return np.array(average)
 
@@ -50,18 +46,21 @@ def load_datasets_in_folder(folder):
 def load_training_data():
     #데이터셋 정의
     X = np.empty((0, 10))
-    Y = np.empty((1, 0))
+    Y = np.empty((0, 3))
     #뜀 데이터 로드
     print("뜀 데이터를 로드합니다.")
     run_data = load_datasets_in_folder("./dataset_run")[0]
     X = np.vstack((X, run_data))
-    Y = np.append(Y, np.repeat(1, len(run_data)))
+    Y = np.vstack((Y, np.repeat([[1, 0, 0]], len(run_data), axis=0)))
     #걸음 데이터 로드
     print("걸음 데이터를 로드합니다.")
     walk_data = load_datasets_in_folder("./dataset_walk")[0]
     X = np.vstack((X, walk_data))
-    Y = np.append(Y, np.repeat(0, len(walk_data)))
-    Y = np.reshape(Y, (len(Y), 1))
+    Y = np.vstack((Y, np.repeat([[0, 1, 0]], len(walk_data), axis=0)))
+    print("가만히 데이터를 로드합니다.")
+    still_data = load_datasets_in_folder("./dataset_still")[0]
+    X = np.vstack((X, still_data))
+    Y = np.vstack((Y, np.repeat([[0, 0, 1]], len(still_data), axis=0)))
     return (X, Y)
 
 # 입력할 데이터
@@ -75,17 +74,6 @@ scaler = StandardScaler()
 
 #csv로부터 데이터 로드
 X, Y = load_training_data()
-Y = np.array([[0,0,1],[0,0,1],[0,0,1],[0,0,1],[0,0,1],
-              [0,0,1],[0,0,1],[0,0,1],[0,0,1],[0,0,1],
-              [0,0,1],[0,0,1],[0,0,1],[0,0,1],[0,0,1],
-              [0,0,1],[0,0,1],[0,0,1],[0,0,1],[0,0,1],
-              [0,0,1],[0,0,1],[0,0,1],
-              [1,1,0],[1,1,0],[1,1,0],[1,1,0],[1,1,0],
-              [1,1,0],[1,1,0],[1,1,0],[1,1,0],[1,1,0],
-              [1,1,0],[1,1,0],[1,1,0],[1,1,0],[1,1,0],
-              [1,1,0],[1,1,0],[1,1,0],[1,1,0],[1,1,0],
-              [1,1,0],[1,1,0],[1,1,0]
-])
 #전처리
 scaler = scaler.fit(X)
 X = scaler.transform(X)
@@ -98,18 +86,15 @@ input_size = 10
 hidden_size_1 = 30
 hidden_size_2 = 30
 hidden_size_3 = 30
-
 output_size = 3
+
 rng = Generator(PCG64(seed=425028234))
 # 가중치 랜덤 1, 2, 3
 W1 = rng.random((input_size, hidden_size_1))
-
 W2 = rng.random((hidden_size_1, hidden_size_2))
-
-
 W3 = rng.random((hidden_size_2, hidden_size_3))
-
 W4 = rng.random((hidden_size_3, output_size))
+
 b1 = np.zeros((1, hidden_size_1))
 b2 = np.zeros((1, hidden_size_2))
 b3 = np.zeros((1, hidden_size_3))
@@ -135,7 +120,7 @@ np.set_printoptions(precision=20, suppress=True)
 
 # 학습률과 반복수
 learning_rate = 0.01
-num_iterations = 1000000
+num_iterations = 100000
 error_list = []
 
 error_10000 = []
@@ -173,8 +158,6 @@ for i in range(num_iterations):
         print(i,"회 반복 : ",error)
         error_list.append(abs(error))
 
-        
-
 # error_list = np.ravel(error_list)
 # plt.plot(error_list)
 # plt.title('Training Loss')
@@ -182,6 +165,19 @@ for i in range(num_iterations):
 # plt.ylabel('Error')
 # plt.show()
 
+def interpret_output(output):
+    output = np.ndarray.flatten(output)
+    assert(len(output) == 3)
+    active = output >= 0.7
+    #0.7 이상이 2개이상일 경우 판단 불가
+    if np.count_nonzero(active) >= 2:
+        return "판단 불가"
+    if active[0]:
+        return "뜀"
+    elif active[1]:
+        return "걸음"
+    else:
+        return "가만히 있기"
 
 
 #테스트 데이터 로드
@@ -202,7 +198,5 @@ for test_data, file_name in zip(test_datum, file_names):
     z4 = np.dot(a3, W4) + b4
 
     y_hat_test = 1 / (1 + np.exp(-z4))
-    print("결과:", y_hat_test)
-    a = y_hat_test
-    print(a)
-
+    print(f"결과: {y_hat_test}")
+    print(f"결과 해석: {interpret_output(y_hat_test)}")
